@@ -10,3 +10,12 @@ def config_flags():
     args = parser.parse_args()
 
     return args
+
+config = config_flags()
+
+CHROME_PATH = ".\chromedriver\chromedriver_win32\chromedriver"
+EDGE_PATH = ".\chromedriver\edgedriver_win64\msedgedriver.exe"
+DELAY = 5 #seconds
+CONFIG = config
+MAXWORD = 10**6
+POST_LENGTH = 100

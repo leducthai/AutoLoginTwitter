@@ -1,60 +1,52 @@
-import time
+from collections import Counter, defaultdict
+import threading
+
 from selenium import webdriver
-from config import config_flags
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+import sys
+from os.path import dirname, abspath
 
-config = config_flags()
+# Get the absolute path of the parent directory (project root)
+project_root = abspath(dirname(dirname(__file__)))
 
-CHROME_PATH = ".\chromedriver\chromedriver_win32\chromedriver"
-EDGE_PATH = ".\chromedriver\edgedriver_win64\msedgedriver.exe"
-delay = 3 #seconds
-# create webdriver object
-driver = webdriver.Chrome(CHROME_PATH)
-driver.implicitly_wait(10)
+# Add the parent directory to the Python path
+sys.path.insert(0, project_root)
 
-
-driver.get("https://twitter.com/login")
-driver.maximize_window()
-
-try:
-    username_input_box = WebDriverWait(driver, delay).until(EC.presence_of_element_located((By.XPATH, "//input[@class='r-30o5oe r-1niwhzg r-17gur6a r-1yadl64 r-deolkf r-homxoj r-poiln3 r-7cikom r-1ny4l3l r-t60dpp r-1dz5y72 r-fdjqy7 r-13qz1uu']")))
-    print("Page is ready!")
-except TimeoutException:
-    print("Loading took too much time!"
-)
-print(username_input_box.get_attribute('name'))
-username_input_box.clear()
-username_input_box.send_keys(config.username, Keys.ENTER)
-
-try:
-    password_input_box = WebDriverWait(driver, delay).until(EC.presence_of_element_located((By.XPATH, "//input[@name='password']")))
-    print("Page is ready!")
-except TimeoutException:
-    print("Loading took too much time!"
-)
-password_input_box.clear()
-password_input_box.send_keys(config.password, Keys.ENTER)
-
-if "enter your password" in driver.page_source.lower():
-    print("wrong password!")
-
-try:
-    search_box = WebDriverWait(driver, delay).until(EC.presence_of_element_located((By.XPATH, "//*[@id='react-root']/div/div/div[2]/main/div/div/div/div[2]/div/div[2]/div/div/div/div[1]/div/div/div/form/div[1]/div/div/div/label/div[2]/div/input")))
-    print("Page is ready!")
-except TimeoutException:
-    print("Loading took too much time!")
-
-search_box.clear()
-search_box.send_keys(config.topic, Keys.ENTER)
-
-driver.set_window_size(2300, 1080)
-while True:
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(1)
+from configs.config import CHROME_PATH
+from configs.config import POST_LENGTH as length
+from threads.twitter_thread import twitter_data
+from threads.reddit_thread import reddit_data
+from threads.handle_data import handle_data
+from logics.logics import prepare_post
+from threads.time_out import timeout
 
 
+if __name__ == "__main__":
+    chrome_options = webdriver.ChromeOptions()
+    prefs = {"profile.default_content_setting_values.notifications": 2}
+    chrome_options.add_experimental_option("prefs", prefs)
 
+    twitter_driver = webdriver.Chrome(CHROME_PATH, chrome_options=chrome_options)
+    twitter_driver.implicitly_wait(10)
+
+    reddit_driver = webdriver.Chrome(CHROME_PATH, chrome_options=chrome_options)
+    reddit_driver.implicitly_wait(10)
+    
+    dataCollector = defaultdict(Counter)
+    stop_flag = threading.Event()
+    chanel = []
+
+    twitter_thread = threading.Thread(target=twitter_data, args=(twitter_driver, chanel, stop_flag))
+    reddit_thread = threading.Thread(target=reddit_data, args=(reddit_driver, chanel, stop_flag))
+    handle_thread = threading.Thread(target=handle_data, args=(chanel, dataCollector, stop_flag))
+    timeout_thread = threading.Thread(target=timeout, args=(stop_flag,))
+
+    twitter_thread.start()
+    reddit_thread.start()
+    handle_thread.start()
+    timeout_thread.start()
+
+    twitter_thread.join()
+    reddit_thread.join()
+    handle_thread.join()
+
+    print(prepare_post(dataCollector, length))
